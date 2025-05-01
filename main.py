@@ -79,13 +79,25 @@ for batch_index, current_batch in enumerate(batches):
 
             # Start Textract
             job_id = start_textract_job(s3_pdf_key)
-            jobs[base_name] = (job_id, doc_output_dir)
+
+            # Store job info and corresponding file keys
+            jobs[base_name] = {
+                "job_id": job_id,
+                "doc_output_dir": doc_output_dir,
+                "s3_jpg_key": s3_jpg_key,
+                "s3_pdf_key": s3_pdf_key,
+            }
 
         except Exception as e:
             logging.error(f"Error uploading or preparing {filename}: {e}")
 
     # --- Process Textract results for batch ---
-    for base_name, (job_id, doc_output_dir) in jobs.items():
+    for base_name, job_info in jobs.items():
+        job_id = job_info["job_id"]
+        doc_output_dir = job_info["doc_output_dir"]
+        s3_jpg_key = job_info["s3_jpg_key"]
+        s3_pdf_key = job_info["s3_pdf_key"]
+
         logging.info(f"Waiting on Textract for: {base_name}.pdf")
 
         if wait_for_completion(job_id):
@@ -106,11 +118,11 @@ for batch_index, current_batch in enumerate(batches):
                 logging.warning(f"Corrected text not found for {base_name}, using raw text.")
                 extract_entities_with_chatgpt(raw_text, base_name, doc_output_dir)
 
-            # Mark success
+            # Mark these keys as successfully processed
             successfully_processed_jpgs.append(s3_jpg_key)
             successfully_processed_pdfs.append(s3_pdf_key)
 
-    # --- Cleanup ---
+    # --- Cleanup temp files and S3 objects ---
     clean_tmp_folder()
 
     if successfully_processed_jpgs:
