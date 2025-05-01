@@ -54,7 +54,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
-**ImageMagick** must be installed system-wide (brew install imagemagick) — it's not a Python package.
+**ImageMagick** must be installed system-wide, it's not a Python package.
+
+```
+brew install imagemagick
+```
 
 1. Set up your .env file with the following keys:
 
