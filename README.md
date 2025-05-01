@@ -1,6 +1,6 @@
 # OCR Processing Pipeline
 
-This project is a batch OCR (Optical Character Recognition) pipeline that uses **AWS Textract** and **OpenAI GPT** to process scanned .jpg images. It extracts raw text, corrects OCR errors, and structures key entities (e.g. people, companies, dates) from historical documents such as theater letters.
+This project is a batch OCR (Optical Character Recognition) pipeline that uses **AWS Textract** and **OpenAI's ChatGPT** to process scanned .jpg images. It extracts raw text, corrects OCR errors, and structures key entities (e.g. people, companies, dates) from historical documents such as theater letters.
 
 ---
 
@@ -10,8 +10,8 @@ This project is a batch OCR (Optical Character Recognition) pipeline that uses *
 - Runs asynchronous AWS Textract OCR jobs
 - Uses OpenAI's GPT to:
   - Correct OCR errors
-  - Extract structured entities
-- Handles file uploads to S3
+  - Extract entities
+- Handles file uploads to S3 bucket
 - Supports batching with configurable size
 - Deletes processed files from S3 after batch completion
 - Logs all operations to timestamped log files
