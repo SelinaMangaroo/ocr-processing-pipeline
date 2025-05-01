@@ -43,7 +43,7 @@ ocr-processing-pipeline/
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/ocr-processing-pipeline.git
+git clone https://github.com/SelinaMangaroo/ocr-processing-pipeline.git
 cd ocr-processing-pipeline
 ```
 
@@ -60,13 +60,77 @@ pip install -r requirements.txt
 brew install imagemagick
 ```
 
-1. Set up your .env file with the following keys:
+---
+
+## AWS Setup (Textract + S3)
+
+To use this OCR pipeline, you'll need to configure your AWS account with access to both **Amazon Textract** and **Amazon S3**.
+
+1. Create an IAM User
+
+Go to the [AWS IAM Console](https://console.aws.amazon.com/iam/):
+
+- Create a new IAM user or use an existing one.
+- Attach the following permissions:
+  - `AmazonTextractFullAccess`
+  - `AmazonS3FullAccess`
+- Generate **Access Key ID** and **Secret Access Key** to set as environment variables
+
+Alternatively if you do not want to set the Access Key ID and Secret Access Key as environment variables, you can store the credentials locally on your machine at `~/.aws/credentials`
+
+Because boto3 follows AWS's default credential provider chain, it automatically uses the credentials from ~/.aws/credentials when no aws_access_key_id or aws_secret_access_key are explicitly passed.
+
+If you’re switching between .env and ~/.aws/credentials, the environment variables will take precedence when both are present.
 
 ```
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-4o-mini
+[default]
+aws_access_key_id = YOUR_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_SECRET_ACCESS_KEY
+```
+
+2. Create an S3 Bucket
+
+Go to the S3 Console:
+
+Create a new bucket or use an existing one.
+
+Ensure your IAM user has read/write access to it.
+
+Textract works with PDF files stored in S3. The pipeline will automatically convert input images to PDFs before sending them to Textract.
+
+---
+
+## OpenAI API Setup (ChatGPT)
+
+This pipeline uses the OpenAI ChatGPT API to:
+- Correct OCR errors (e.g. misspellings, broken words)
+- Extract structured entities like names, dates, companies, and locations
+
+1. Get an API Key
+
+- Create an account at [OpenAI](https://platform.openai.com/).
+- Go to your [API Keys page](https://platform.openai.com/account/api-keys) and generate a new key.
+
+2. Set Environment Variables
+
+In your `.env` file, add the following:
+
+```env
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
+```
+
+---
+
+3. Set up your .env file with the following keys:
+
+```
+AWS_ACCESS_KEY_ID=EXAMPLEACCESSKEYID (optional)
+AWS_SECRET_ACCESS_KEY=EXAMPLESECRETACCESSKEY (optional)
 BUCKET_NAME=your_s3_bucket_name
 REGION=us-east-1
+OPENAI_API_KEY=your_openai_key
+OPENAI_MODEL=gpt-4o-mini
 TMP_DIR=./tmp
 INPUT_DIR=./input
 OUTPUT_DIR=./output
