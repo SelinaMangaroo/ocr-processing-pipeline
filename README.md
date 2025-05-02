@@ -66,7 +66,9 @@ brew install imagemagick
 
 To use this OCR pipeline, you'll need to configure your AWS account with access to both **Amazon Textract** and **Amazon S3**.
 
-1. Create an IAM User
+Textract is a machine learning service from AWS, to extract printed text and data from scanned documents. The script interacts with Textract and S3 using **Boto3**, the official AWS SDK for Python.
+
+### Create an IAM User
 
 Go to the [AWS IAM Console](https://console.aws.amazon.com/iam/):
 
@@ -80,15 +82,16 @@ Alternatively if you do not want to set the Access Key ID and Secret Access Key 
 
 Because boto3 follows AWS's default credential provider chain, it automatically uses the credentials from ~/.aws/credentials when no aws_access_key_id or aws_secret_access_key are explicitly passed.
 
-If you’re switching between .env and ~/.aws/credentials, the environment variables will take precedence when both are present.
+If you’re switching between .env and ~/.aws/credentials, the environment variables will take precedence if both are present.
 
+In ``~/.aws/credentials``
 ```
 [default]
 aws_access_key_id = YOUR_ACCESS_KEY_ID
 aws_secret_access_key = YOUR_SECRET_ACCESS_KEY
 ```
 
-2. Create an S3 Bucket
+### Create an S3 Bucket
 
 Go to the S3 Console:
 
@@ -102,16 +105,17 @@ Textract works with PDF files stored in S3. The pipeline will automatically conv
 
 ## OpenAI API Setup (ChatGPT)
 
+The ChatGPT API is integrated via the `openai` Python package to post-process text extracted by Textract.
 This pipeline uses the OpenAI ChatGPT API to:
 - Correct OCR errors (e.g. misspellings, broken words)
 - Extract structured entities like names, dates, companies, and locations
 
-1. Get an API Key
+### Get an API Key
 
 - Create an account at [OpenAI](https://platform.openai.com/).
 - Go to your [API Keys page](https://platform.openai.com/account/api-keys) and generate a new key.
 
-2. Set Environment Variables
+### Set Environment Variables
 
 In your `.env` file, add the following:
 
