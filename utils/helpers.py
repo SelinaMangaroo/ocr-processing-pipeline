@@ -7,21 +7,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 tmp_dir = os.environ.get("TMP_DIR")
+image_magick_command = os.environ.get("IMAGE_MAGICK_COMMAND", "convert")
 
 # --- FUNCTION:    Splits a list into smaller batches of size `batch_size`.
-#    Args:
-#       lst (list): The list to split.
-#       batch_size (int): Maximum number of items per batch.
-#    Yields:
-#        list: A batch of items from the original list.
-
 def split_into_batches(list, batch_size):
     for i in range(0, len(list), batch_size):
         yield list[i:i + batch_size]
 
 # --- FUNCTION: Convert a .jpg file to .pdf using ImageMagick ---
+# TODO: magick does not work on Linux, use convert instead, make this configurable
 def convert_jpg_to_pdf(jpg_path, pdf_path):
-    subprocess.run(["magick", jpg_path, pdf_path], check=True)
+    subprocess.run([image_magick_command, jpg_path, pdf_path], check=True)
 
 # --- FUNCTION: Clean up all temporary files in tmp_dir ---
 def clean_tmp_folder():
