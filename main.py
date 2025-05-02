@@ -6,7 +6,10 @@ import boto3  # AWS SDK for Python
 import os     # File and path handling
 import logging
 import shutil
+import time  # Add at the top if not already imported
 from dotenv import load_dotenv
+
+start_time = time.time()  # Start tracking time
 
 # --- Load environment variables ---
 load_dotenv()
@@ -132,3 +135,8 @@ for batch_index, current_batch in enumerate(batches):
     if successfully_processed_pdfs:
         delete_files_from_s3(successfully_processed_pdfs)
         logging.info(f"Deleted {len(successfully_processed_pdfs)} PDFs from S3.")
+
+end_time = time.time()
+hours, rem = divmod(end_time - start_time, 3600)
+minutes, seconds = divmod(rem, 60)
+logging.info(f"Pipeline completed in {int(hours)}h {int(minutes)}m {int(seconds)}s.")
