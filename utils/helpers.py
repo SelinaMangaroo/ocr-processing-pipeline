@@ -5,36 +5,51 @@ from datetime import datetime
 import time
 import shutil
 
-# --- FUNCTION: Yields successive batches (sublists) from a list.
 def split_into_batches(items, batch_size):
     """Splits a list into batches of size `batch_size`."""
     for i in range(0, len(items), batch_size):
         yield items[i:i + batch_size]
 
-
-# --- FUNCTION: Generate all relevant file paths for a given input filename ---
 def get_file_paths(filename, tmp_dir, input_dir, output_dir):
+    """
+    Generates file paths for the input filename, including:
+    - Base name (without extension)
+    - Path to the original file
+    - Path to the .pdf file
+    - S3 key for the .pdf file
+    - Directory for the document output
+    """
     base_name, _ = os.path.splitext(filename)
     return {
         "base_name": base_name,
         "path_to_file": os.path.join(input_dir, filename),
-        "jpg_file": os.path.join(input_dir, filename),
         "pdf_file": os.path.join(tmp_dir, f"{base_name}.pdf"),
         "s3_pdf_key": f"{base_name}.pdf",
         "doc_output_dir": os.path.join(output_dir, base_name),
     }
 
-# --- FUNCTION: Convert a .jpg file to .pdf using ImageMagick ---
-def convert_jpg_to_pdf(jpg_path, pdf_path, image_magick_command="convert", filename=""):
+def convert_to_pdf(file_path, pdf_path, image_magick_command="convert", filename=""):
+    """
+    Converts an image file to PDF using ImageMagick.
+    Args:
+        file_path (str): Path to the input image file.
+        pdf_path (str): Path to save the output PDF file.
+        image_magick_command (str): Command to run ImageMagick. Default is "convert".
+        filename (str): Name of the file being processed, for logging purposes.
+    """
     try:
         logging.info(f"Converting {filename} to PDF...")
-        subprocess.run([image_magick_command, jpg_path, pdf_path], check=True)
+        subprocess.run([image_magick_command, file_path, pdf_path], check=True)
     except subprocess.CalledProcessError as e:
-        logging.error(f"ImageMagick failed to convert {jpg_path} to PDF: {e}")
+        logging.error(f"ImageMagick failed to convert {file_path} to PDF: {e}")
         raise
 
-# --- FUNCTION: Wipe and recreate the tmp_dir ---
 def clean_tmp_folder(tmp_dir):
+    """
+    Cleans up the temporary directory by deleting all its contents and recreating it.
+    Args:
+        tmp_dir (str): Path to the temporary directory.
+    """
     try:
         shutil.rmtree(tmp_dir)  # Delete entire temp folder and contents
         os.makedirs(tmp_dir, exist_ok=True)  # Recreate clean folder
@@ -42,8 +57,14 @@ def clean_tmp_folder(tmp_dir):
     except Exception as e:
         logging.error(f"Failed to clean temporary directory: {e}")
 
-# --- FUNCTION: Initialize logging to both file and console ---
 def initialize_logging(log_dir="logs"):
+    """
+    Initializes logging to both a file and the console.
+    Args:
+        log_dir (str): Directory to save the log file. Default is "logs".
+    Returns:
+        str: Path to the log file.
+    """
     os.makedirs(log_dir, exist_ok=True)
 
     log_filename = datetime.now().strftime("%m-%d-%Y_%H-%M-%S.log")
@@ -72,8 +93,12 @@ def initialize_logging(log_dir="logs"):
     logging.info("Logging initialized.")
     return log_path
 
-# --- FUNCTION: Add total runtime to logs ---
 def log_runtime(start_time):
+    """
+    Logs the total runtime of the script.
+    Args:
+        start_time (float): Start time of the script.
+    """
     hrs, rem = divmod(time.time() - start_time, 3600)
     mins, secs = divmod(rem, 60)
     logging.info(f"Pipeline completed in {int(hrs)}h {int(mins)}m {int(secs)}s.")

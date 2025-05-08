@@ -7,8 +7,8 @@ import time
 import boto3  # AWS SDK for Python
 from openai import OpenAI
 from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Load environment variables ---
 load_dotenv()
@@ -44,21 +44,23 @@ if not input_dir or not os.path.isdir(input_dir):
     logging.error("INPUT_DIR is not set or does not exist.")
     exit(1)
 
+# --- Use max_workers Based on CPU Count ---
 max_threads = min(8, multiprocessing.cpu_count() * 2)
 
-files = [
-    f for f in os.listdir(input_dir)
-    if f.lower().endswith((".jpg", ".jpeg"))
-]
-batches = list(split_into_batches(files, batch_size))
-
 def prepare_file_for_textract(filename):
+    """
+    Prepares a file for Textract processing by converting it to PDF and uploading it to S3.
+    Args:
+        filename (str): The name of the file to process.
+    Returns:
+        tuple: Base name and job information.
+    """
     try:
         paths = get_file_paths(filename, tmp_dir, input_dir, output_dir)
         base_name = paths["base_name"]
         os.makedirs(paths["doc_output_dir"], exist_ok=True)
 
-        convert_jpg_to_pdf(paths["jpg_file"], paths["pdf_file"], image_magick_command, filename)
+        convert_to_pdf(paths["path_to_file"], paths["pdf_file"], image_magick_command, filename)
 
         upload_file_to_s3(paths["pdf_file"], s3, bucket_name, paths["s3_pdf_key"])
 
@@ -73,6 +75,41 @@ def prepare_file_for_textract(filename):
         logging.error(f"Error processing {filename}: {e}")
         return None
 
+def process_textract_result(base_name, job_info):
+    """
+    Processes the Textract result by waiting for completion and extracting text and coordinates.
+    Args:
+        base_name (str): The base name of the file.
+        job_info (dict): Job information including job ID and output directory.
+    """
+    job_id = job_info["job_id"]
+    doc_output_dir = job_info["doc_output_dir"]
+
+    logging.info(f"Waiting on Textract for: {base_name}.pdf")
+
+    if wait_for_completion(job_id, textract):
+        extract_and_save_text_and_coords(job_id, base_name, doc_output_dir, textract)
+        logging.info(f"Textract complete: {base_name}")
+
+        raw_path = os.path.join(doc_output_dir, base_name + ".raw.txt")
+        with open(raw_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
+
+        corrected_path = correct_text_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
+
+        if corrected_path and os.path.exists(corrected_path):
+            with open(corrected_path, "r", encoding="utf-8") as cf:
+                corrected_text = cf.read()
+            extract_entities_with_chatgpt(corrected_text, base_name, doc_output_dir, chat_gpt_client, model_name)
+        else:
+            logging.warning(f"Corrected text not found for {base_name}, using raw text.")
+            extract_entities_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
+
+files = [
+    f for f in os.listdir(input_dir)
+    if f.lower().endswith((".jpg", ".jpeg"))
+]
+batches = list(split_into_batches(files, batch_size))
 
 # --- Process in batches ---
 for batch_index, current_batch in enumerate(batches):
@@ -80,6 +117,8 @@ for batch_index, current_batch in enumerate(batches):
 
     jobs = {}
     
+    # --- Parallel file preparation ---
+    # Use ThreadPoolExecutor to prepare files for Textract in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = [executor.submit(prepare_file_for_textract, filename) for filename in current_batch]
         for future in as_completed(futures):
@@ -87,32 +126,9 @@ for batch_index, current_batch in enumerate(batches):
             if result:
                 base_name, job_info = result
                 jobs[base_name] = job_info
-    
-    def process_textract_result(base_name, job_info):
-        job_id = job_info["job_id"]
-        doc_output_dir = job_info["doc_output_dir"]
-
-        logging.info(f"Waiting on Textract for: {base_name}.pdf")
-
-        if wait_for_completion(job_id, textract):
-            extract_and_save_text_and_coords(job_id, base_name, doc_output_dir, textract)
-            logging.info(f"Textract complete: {base_name}")
-
-            raw_path = os.path.join(doc_output_dir, base_name + ".raw.txt")
-            with open(raw_path, "r", encoding="utf-8") as f:
-                raw_text = f.read()
-
-            corrected_path = correct_text_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
-
-            if corrected_path and os.path.exists(corrected_path):
-                with open(corrected_path, "r", encoding="utf-8") as cf:
-                    corrected_text = cf.read()
-                extract_entities_with_chatgpt(corrected_text, base_name, doc_output_dir, chat_gpt_client, model_name)
-            else:
-                logging.warning(f"Corrected text not found for {base_name}, using raw text.")
-                extract_entities_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
 
     # --- Parallel result processing ---
+    # Use ThreadPoolExecutor to process Textract results in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = [executor.submit(process_textract_result, base_name, job_info) for base_name, job_info in jobs.items()]
         for future in as_completed(futures):
