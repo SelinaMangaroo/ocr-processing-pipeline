@@ -1,23 +1,24 @@
 import os
 import logging
 import json
-from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
-api_key = os.environ.get("OPENAI_API_KEY")
-model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")  # fallback default
+def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_name):
+    """
+    Sends OCR text to ChatGPT for basic correction, then saves it to a .corrected.txt file.
 
-client = OpenAI(api_key=api_key)
+    Args:
+        text (str): Raw OCR output.
+        base_name (str): Base filename.
+        doc_output_dir (str): Directory to save the corrected file.
+        client (OpenAI): Pre-initialized OpenAI client.
+        model_name (str): Model name (e.g. "gpt-4o-mini").
 
-# --- FUNCTION: Sends raw OCR text to ChatGPT for spelling and punctuation correction,
-# and saves the corrected text to a `.corrected.txt` file in the output folder.
-# The AI is instructed not to add or infer any extra content.
-
-def correct_text_with_chatgpt(text, base_name, doc_output_dir):
+    Returns:
+        str or None: Path to corrected file or None on failure.
+    """
     try:
-        logging.info(f"Sending text to ChatGPT for correction: {base_name}")
-
+        logging.info(f"Correcting OCR text for: {base_name}")
+        
         response = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -37,8 +38,8 @@ def correct_text_with_chatgpt(text, base_name, doc_output_dir):
         )
 
         corrected_text = response.choices[0].message.content.strip()
-
         corrected_path = os.path.join(doc_output_dir, base_name + ".corrected.txt")
+
         with open(corrected_path, 'w', encoding='utf-8') as f:
             f.write(corrected_text)
 
@@ -46,16 +47,27 @@ def correct_text_with_chatgpt(text, base_name, doc_output_dir):
         return corrected_path
 
     except Exception as e:
-        logging.error(f"Failed to correct text for {base_name}: {e}")
+        logging.error(f"ChatGPT correction failed for {base_name}: {e}")
         return None
-    
-# --- FUNCTION: Sends text to ChatGPT and asks it to extract structured entities (People, Productions,
-# Companies, Theaters, Dates). Saves the result as a JSON file.
-# Falls back to saving raw text if the output is not valid JSON.
-def extract_entities_with_chatgpt(text, base_name, doc_output_dir):
+
+def extract_entities_with_chatgpt(text, base_name, doc_output_dir, client, model_name):
+    """
+    Sends OCR text to ChatGPT and extracts named entities as JSON. 
+    Falls back to saving raw output if JSON decoding fails.
+
+    Args:
+        text (str): OCR text to analyze.
+        base_name (str): File name without extension.
+        doc_output_dir (str): Path to store results.
+        client (OpenAI): Pre-initialized OpenAI client.
+        model_name (str): ChatGPT model (e.g., gpt-4o-mini).
+
+    Returns:
+        str or None: Path to saved JSON (or None if extraction failed).
+    """
     try:
         logging.info(f"Extracting entities with ChatGPT for: {base_name}")
-
+        
         response = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -77,25 +89,23 @@ def extract_entities_with_chatgpt(text, base_name, doc_output_dir):
             temperature=0.2
         )
 
-        entity_data = response.choices[0].message.content.strip()
-        
-        # Try to parse as JSON to ensure validity
+        result = response.choices[0].message.content.strip()
+
+        # Attempt to parse valid JSON
         try:
-            parsed = json.loads(entity_data)
-            # Save the parsed, pretty-printed JSON
+            parsed = json.loads(result)
             entity_path = os.path.join(doc_output_dir, base_name + ".entities.json")
             with open(entity_path, 'w', encoding='utf-8') as f:
                 json.dump(parsed, f, indent=2)
             logging.info(f"Entity extraction saved: {entity_path}")
             return entity_path
         except json.JSONDecodeError:
-            # Save raw output for debugging
-            error_path = os.path.join(doc_output_dir, base_name + ".entities_raw.txt")
-            with open(error_path, 'w', encoding='utf-8') as f:
-                f.write(entity_data)
-            logging.warning(f"Entity extraction result was not valid JSON. Raw output saved: {error_path}")
+            raw_path = os.path.join(doc_output_dir, base_name + ".entities_raw.txt")
+            with open(raw_path, 'w', encoding='utf-8') as f:
+                f.write(result)
+            logging.warning(f"Invalid JSON for {base_name}. Raw output saved: {raw_path}")
             return None
 
     except Exception as e:
-        logging.error(f"Failed to extract entities for {base_name}: {e}")
+        logging.error(f"Entity extraction failed for {base_name}: {e}")
         return None

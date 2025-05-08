@@ -1,28 +1,32 @@
 from utils.aws_utils import *
 from utils.helpers import *
 from utils.chatgpt_utils import *
-
-import boto3  # AWS SDK for Python
-import os     # File and path handling
+import os    
 import logging
-import shutil
-import time  # Add at the top if not already imported
+import time
+import boto3  # AWS SDK for Python
+from openai import OpenAI
 from dotenv import load_dotenv
-
-start_time = time.time()  # Start tracking time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing
 
 # --- Load environment variables ---
 load_dotenv()
 bucket_name = os.environ.get("BUCKET_NAME")
+region = os.environ.get("REGION")
 tmp_dir = os.environ.get("TMP_DIR")
 input_dir = os.environ.get("INPUT_DIR")
 output_dir = os.environ.get("OUTPUT_DIR")
-region = os.environ.get("REGION")
 batch_size = int(os.environ.get("BATCH_SIZE", 10))  # Default batch size is 10
+image_magick_command = os.environ.get("IMAGE_MAGICK_COMMAND", "convert")
+api_key = os.environ.get("OPENAI_API_KEY")
+model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")  # fallback default
 
 # --- Initialize logging ---
 log_path = initialize_logging()
 logging.info("Textract processing pipeline started.")
+
+start_time = time.time()  # Start tracking time
 
 # --- Ensure directories exist ---
 os.makedirs(tmp_dir, exist_ok=True)
@@ -30,11 +34,17 @@ os.makedirs(output_dir, exist_ok=True)
 
 # --- AWS Client ---
 s3 = boto3.client('s3', region_name=region)
+textract = boto3.client('textract', region_name=region) # Create Textract client for OCR processing
+
+# --- ChatGPT Client ---
+chat_gpt_client = OpenAI(api_key=api_key)
 
 # --- Read all files ---
 if not input_dir or not os.path.isdir(input_dir):
     logging.error("INPUT_DIR is not set or does not exist.")
     exit(1)
+
+max_threads = min(8, multiprocessing.cpu_count() * 2)
 
 files = [
     f for f in os.listdir(input_dir)
@@ -42,101 +52,73 @@ files = [
 ]
 batches = list(split_into_batches(files, batch_size))
 
+def prepare_file_for_textract(filename):
+    try:
+        paths = get_file_paths(filename, tmp_dir, input_dir, output_dir)
+        base_name = paths["base_name"]
+        os.makedirs(paths["doc_output_dir"], exist_ok=True)
+
+        convert_jpg_to_pdf(paths["jpg_file"], paths["pdf_file"], image_magick_command, filename)
+
+        upload_file_to_s3(paths["pdf_file"], s3, bucket_name, paths["s3_pdf_key"])
+
+        job_id = start_textract_job(paths["s3_pdf_key"], textract, bucket_name)
+
+        return base_name, {
+            "job_id": job_id,
+            "doc_output_dir": paths["doc_output_dir"],
+            "s3_pdf_key": paths["s3_pdf_key"],
+        }
+    except Exception as e:
+        logging.error(f"Error processing {filename}: {e}")
+        return None
+
+
 # --- Process in batches ---
 for batch_index, current_batch in enumerate(batches):
     logging.info(f"Processing batch {batch_index + 1} of {len(batches)}")
 
     jobs = {}
-    successfully_processed_jpgs = []
-    successfully_processed_pdfs = []
-
-    for filename in current_batch:
-        base_name = os.path.splitext(filename)[0]
-        local_path = os.path.join(input_dir, filename)
-        local_jpg = os.path.join(tmp_dir, filename)
-        local_pdf = os.path.join(tmp_dir, base_name + ".pdf")
-        s3_jpg_key = filename
-        s3_pdf_key = base_name + ".pdf"
-
-        doc_output_dir = os.path.join(output_dir, base_name)
-        os.makedirs(doc_output_dir, exist_ok=True)
-
-        try:
-            # Upload JPG to S3
-            s3.upload_file(local_path, bucket_name, s3_jpg_key)
-            logging.info(f"Uploaded to S3: {s3_jpg_key}")
-
-            # Copy to tmp_dir for processing
-            shutil.copy(local_path, local_jpg)
-
-            # Convert to PDF
-            logging.info(f"Converting {filename} to PDF...")
-            convert_jpg_to_pdf(local_jpg, local_pdf)
-
-            # Upload PDF to S3
-            s3.upload_file(local_pdf, bucket_name, s3_pdf_key)
-            logging.info(f"Uploaded PDF to S3: {s3_pdf_key}")
-
-            # Save local copy
-            shutil.copy(local_pdf, os.path.join(doc_output_dir, base_name + ".pdf"))
-
-            # Start Textract
-            job_id = start_textract_job(s3_pdf_key)
-
-            # Store job info and corresponding file keys
-            jobs[base_name] = {
-                "job_id": job_id,
-                "doc_output_dir": doc_output_dir,
-                "s3_jpg_key": s3_jpg_key,
-                "s3_pdf_key": s3_pdf_key,
-            }
-
-        except Exception as e:
-            logging.error(f"Error uploading or preparing {filename}: {e}")
-
-    # --- Process Textract results for batch ---
-    for base_name, job_info in jobs.items():
+    
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        futures = [executor.submit(prepare_file_for_textract, filename) for filename in current_batch]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                base_name, job_info = result
+                jobs[base_name] = job_info
+    
+    def process_textract_result(base_name, job_info):
         job_id = job_info["job_id"]
         doc_output_dir = job_info["doc_output_dir"]
-        s3_jpg_key = job_info["s3_jpg_key"]
-        s3_pdf_key = job_info["s3_pdf_key"]
 
         logging.info(f"Waiting on Textract for: {base_name}.pdf")
 
-        if wait_for_completion(job_id):
-            extract_and_save_text_and_coords(job_id, base_name, doc_output_dir)
+        if wait_for_completion(job_id, textract):
+            extract_and_save_text_and_coords(job_id, base_name, doc_output_dir, textract)
             logging.info(f"Textract complete: {base_name}")
 
             raw_path = os.path.join(doc_output_dir, base_name + ".raw.txt")
             with open(raw_path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
 
-            corrected_path = correct_text_with_chatgpt(raw_text, base_name, doc_output_dir)
+            corrected_path = correct_text_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
 
             if corrected_path and os.path.exists(corrected_path):
                 with open(corrected_path, "r", encoding="utf-8") as cf:
                     corrected_text = cf.read()
-                extract_entities_with_chatgpt(corrected_text, base_name, doc_output_dir)
+                extract_entities_with_chatgpt(corrected_text, base_name, doc_output_dir, chat_gpt_client, model_name)
             else:
                 logging.warning(f"Corrected text not found for {base_name}, using raw text.")
-                extract_entities_with_chatgpt(raw_text, base_name, doc_output_dir)
+                extract_entities_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
 
-            # Mark these keys as successfully processed
-            successfully_processed_jpgs.append(s3_jpg_key)
-            successfully_processed_pdfs.append(s3_pdf_key)
+    # --- Parallel result processing ---
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        futures = [executor.submit(process_textract_result, base_name, job_info) for base_name, job_info in jobs.items()]
+        for future in as_completed(futures):
+            future.result()
 
-    # --- Cleanup temp files and S3 objects ---
-    clean_tmp_folder()
+    clean_tmp_folder(tmp_dir)
+    delete_all_files_in_bucket(s3, bucket_name)
 
-    if successfully_processed_jpgs:
-        delete_files_from_s3(successfully_processed_jpgs)
-        logging.info(f"Deleted {len(successfully_processed_jpgs)} JPGs from S3.")
-
-    if successfully_processed_pdfs:
-        delete_files_from_s3(successfully_processed_pdfs)
-        logging.info(f"Deleted {len(successfully_processed_pdfs)} PDFs from S3.")
-
-end_time = time.time()
-hours, rem = divmod(end_time - start_time, 3600)
-minutes, seconds = divmod(rem, 60)
-logging.info(f"Pipeline completed in {int(hours)}h {int(minutes)}m {int(seconds)}s.")
+log_runtime(start_time)
