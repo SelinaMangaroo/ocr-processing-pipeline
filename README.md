@@ -11,10 +11,12 @@ This project is a batch OCR (Optical Character Recognition) pipeline that uses *
 - Uses OpenAI's GPT to:
   - Correct OCR errors
   - Extract entities
-- Handles file uploads to S3 bucket
+- S3 uploads & automatic cleanup after processing 
 - Supports batching with configurable size
-- Deletes processed files from S3 after batch completion
+- Structured output: raw text, corrected text, entity JSON
 - Logs all operations to timestamped log files
+- Word count validation tests (pytest)
+- Optimized with parallel processing (ThreadPoolExecutor)
 
 ---
 
@@ -26,10 +28,12 @@ ocr-processing-pipeline/
 │   ├── aws_utils.py              # AWS Textract, S3, and OCR logic
 │   ├── chatgpt_utils.py          # GPT-based text correction and entity extraction
 │   ├── helpers.py                # PDF conversion, logging, etc.
+├── tests/                        # Pytest test suite
 ├── logs/                         # Runtime logs
 ├── output/                       # Output text, JSON, corrected results
 ├── venv/                         # Virtual environment (not tracked in version control)
-├── main.py                       # Entry point for the pipeline     
+├── main.py                       # Entry point for the pipeline
+├── .env                          # Configuration variables     
 ├── .gitignore                    # Specifies files/directories to exclude from Git
 ├── README.md                     # Project documentation
 ├── requirements.txt              # List of dependencies
@@ -145,3 +149,28 @@ BATCH_SIZE=10
 ```
 python main.py
 ```
+
+---
+
+## Testing
+Testing is done using `pytest`. 
+
+The `tests/` directory contains word count consistency tests to verify corrections didn't significantly alter content.
+
+Run tests:
+```
+pytest
+```
+
+---
+
+## Logs & Outputs
+
+Logs: /logs/MM-DD-YYYY_HH-MM-SS.log
+
+Outputs:
+
+- .raw.txt (original Textract output)
+- .corrected.txt (GPT-corrected text)
+- .coords.json (bounding box info)
+- .entities.json (structured entities)
