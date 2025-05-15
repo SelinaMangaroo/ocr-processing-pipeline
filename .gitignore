@@ -11,6 +11,7 @@ venv/
 
 # Logs
 logs/
+test_logs/
 *.log
 
 tmp/

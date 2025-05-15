@@ -72,7 +72,7 @@ def initialize_logging(log_dir="logs"):
 
     formatter = logging.Formatter(
         fmt="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%m-%d-%Y_%H-%M-%S"
     )
 
     # File handler

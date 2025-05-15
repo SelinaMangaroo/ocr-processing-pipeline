@@ -105,7 +105,7 @@ def start_textract_job(s3_pdf_key, textract, bucket_name):
         logging.error(f"Failed to start Textract job for {s3_pdf_key}: {e}")
         raise
 
-def wait_for_completion(job_id, textract, max_retries=30, delay=3):
+def wait_for_completion(job_id, textract, max_retries, delay):
     """
     Waits for the Textract job to complete.
     Args:
