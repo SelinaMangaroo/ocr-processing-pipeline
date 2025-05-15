@@ -157,9 +157,14 @@ Testing is done using `pytest`.
 
 The `tests/` directory contains word count consistency tests to verify corrections didn't significantly alter content.
 
-Run tests:
+Run all tests:
 ```
 pytest
+```
+
+Run specific test:
+```
+pytest tests/test_wordcount.py
 ```
 
 ---
