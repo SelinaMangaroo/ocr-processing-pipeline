@@ -16,6 +16,7 @@ logs/
 tmp/
 2025_Scans/
 bucket_output/
+Letterbook_PDFs/
 
 save.py
 
