@@ -39,7 +39,6 @@ ocr-processing-pipeline/
 ├── requirements.txt              # List of dependencies
 ```
 
-
 ---
 
 ## Setup
@@ -147,6 +146,8 @@ INPUT_DIR=./input
 OUTPUT_DIR=./output
 BATCH_SIZE=10
 IMAGE_MAGICK_COMMAND=magick
+TEST_LEVENSHTEIN_MAX_DIFF_RATIO=0.15
+TEST_WORD_COUNT_TOLERANCE=0.15
 ```
 
 4. Run the pipeline:
@@ -166,7 +167,7 @@ Run all tests:
 pytest
 ```
 
-Run specific test:
+Run a specific test:
 ```
 pytest tests/test_wordcount.py
 ```
@@ -176,6 +177,7 @@ pytest tests/test_wordcount.py
 ## Logs & Outputs
 
 Logs: /logs/MM-DD-YYYY_HH-MM-SS.log
+Test Logs: /test_logs/test_MM-DD-YYYY_HH-MM-SS.log
 
 Outputs:
 

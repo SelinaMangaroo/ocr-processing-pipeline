@@ -1,20 +1,17 @@
 import os
 import logging
 import pytest
-from tests.logging_setup import *
+from tests.test_utils import *
 
 initialize_test_logger()
 
-#TODO: make configurable
-
 # This decorator tells pytest to run the test multiple times, once for each value of base_name.
 @pytest.mark.parametrize("base_name", [
-    name for name in os.listdir("bucket_output")
-    if os.path.isdir(os.path.join("bucket_output", name))
+    name for name in os.listdir(output_dir)
+    if os.path.isdir(os.path.join(output_dir, name))
 ])
 
-# Accepts a 10% difference by default.
-def test_word_count_consistency(base_name, output_dir="bucket_output", tolerance=0.05):
+def test_word_count_consistency(base_name):
     """
     Test that the word count of the raw and corrected text files are consistent.
     The difference in word count should not exceed a specified tolerance.
@@ -36,13 +33,13 @@ def test_word_count_consistency(base_name, output_dir="bucket_output", tolerance
     with open(corrected_path, 'r', encoding='utf-8') as cf:
         corrected_text = cf.read()
 
-    # Calculate word counts
-    raw_words = len(raw_text.split())
-    corrected_words = len(corrected_text.split())
+    # Normalize whitespace before counting words
+    raw_words = len(normalize_whitespace(raw_text).split())
+    corrected_words = len(normalize_whitespace(corrected_text).split())
     
     # Calculate the difference and allowed tolerance
     delta = abs(raw_words - corrected_words) #Absolute difference in word count.
-    allowed = max(1, int(raw_words * tolerance))  # Never allow 0-word diff
+    allowed = max(1, int(raw_words * wordcount_tolerance))  # Never allow 0-word diff
     
     logging.info(f"[{base_name}] Raw words: {raw_words} | Corrected words: {corrected_words} | Delta: {delta} | Allowed: {allowed}")
 
