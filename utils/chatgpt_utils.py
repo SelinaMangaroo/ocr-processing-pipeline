@@ -2,7 +2,7 @@ import os
 import logging
 import json
 
-def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_name):
+def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_name, save=True):
     """
     Sends OCR text to ChatGPT for basic correction, then saves it to a .corrected.txt file.
 
@@ -16,6 +16,7 @@ def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_nam
     Returns:
         str or None: Path to corrected file or None on failure.
     """
+    
     try:
         logging.info(f"Correcting OCR text for: {base_name}")
         
@@ -38,17 +39,28 @@ def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_nam
         )
 
         corrected_text = response.choices[0].message.content.strip()
-        corrected_path = os.path.join(doc_output_dir, base_name + ".corrected.txt")
+        # corrected_path = os.path.join(doc_output_dir, base_name + ".corrected.txt")
 
-        with open(corrected_path, 'w', encoding='utf-8') as f:
-            f.write(corrected_text)
+        # with open(corrected_path, 'w', encoding='utf-8') as f:
+        #     f.write(corrected_text)
 
-        logging.info(f"Corrected text saved: {corrected_path}")
-        return corrected_path
+        # logging.info(f"Corrected text saved: {corrected_path}")
+        # return corrected_path
+        
+        if save:
+            corrected_path = os.path.join(doc_output_dir, base_name + ".corrected.txt")
+            with open(corrected_path, 'w', encoding='utf-8') as f:
+                f.write(corrected_text)
+            logging.info(f"Corrected text saved: {corrected_path}")
+            return corrected_path
+        else:
+            return corrected_text
+        
 
     except Exception as e:
         logging.error(f"ChatGPT correction failed for {base_name}: {e}")
         return None
+    
 
 def extract_entities_with_chatgpt(text, base_name, doc_output_dir, client, model_name):
     """

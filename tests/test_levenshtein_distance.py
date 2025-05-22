@@ -12,7 +12,6 @@ initialize_test_logger()
     if os.path.isdir(os.path.join(output_dir, name))
 ])
 
-#TODO: Make configurable
 def test_levenshtein_distance_change(base_name):
     """
     Compares raw Textract output vs corrected text using Levenshtein ratio.
