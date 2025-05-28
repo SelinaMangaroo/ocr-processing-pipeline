@@ -1,7 +1,6 @@
 import os
 import logging
 import json
-import re
 
 def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_name, save=True):
     """
