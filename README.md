@@ -10,12 +10,12 @@ This project is a batch OCR (Optical Character Recognition) pipeline that uses *
 - Runs asynchronous AWS Textract OCR jobs
 - Uses OpenAI's GPT to:
   - Correct OCR errors
-  - Extract entities
+  - Extract entities and other metadata
 - S3 uploads & automatic cleanup after processing 
 - Supports batching with configurable size
 - Structured output: raw text, corrected text, entity JSON
 - Logs all operations to timestamped log files
-- Word count validation tests (pytest)
+- Includes word count + Levenshtein distance validation via pytest
 - Optimized with parallel processing (ThreadPoolExecutor)
 
 ---
@@ -29,6 +29,11 @@ ocr-processing-pipeline/
 │   ├── chatgpt_utils.py          # GPT-based text correction and entity extraction
 │   ├── helpers.py                # PDF conversion, logging, etc.
 ├── tests/                        # Pytest test suite
+│   ├── test_wordcount.py         # Test: word count differences
+│   ├── test_levenshtein_distance.py  # Test: text delta magnitude
+│   ├── test_chatgpt_consistency.py   # Test: GPT output stability
+│   └── test_utils.py             # Shared test utilities
+├── test_logs/                    # Runtime test logs
 ├── logs/                         # Runtime logs
 ├── output/                       # Output text, JSON, corrected results
 ├── venv/                         # Virtual environment (not tracked in version control)
@@ -60,7 +65,8 @@ pip install -r requirements.txt
 **ImageMagick** must be installed system-wide, it's not a Python package.
 
 ```
-brew install imagemagick
+brew install imagemagick # macOS
+sudo apt install imagemagick  # Debian/Ubuntu
 ```
 
 ---
@@ -139,18 +145,47 @@ REGION=us-east-1
 TEXTRACT_MAX_RETRIES=120
 TEXTRACT_DELAY=5
 MAX_THREADS=8
+BATCH_SIZE=10
+
 OPENAI_API_KEY=your_openai_key
 OPENAI_MODEL=gpt-4o-mini
+
 TMP_DIR=./tmp
 INPUT_DIR=./input
 OUTPUT_DIR=./output
-BATCH_SIZE=10
+
 IMAGE_MAGICK_COMMAND=magick
+
 TEST_LEVENSHTEIN_MAX_DIFF_RATIO=0.15
 TEST_WORD_COUNT_TOLERANCE=0.15
+TEST_GPT_REPEAT_CORRECTIONS=10
+TEST_TARGET_FILE=EXAMPLE_FILE
 ```
+### Environment Variable Explanations
 
-4. Run the pipeline:
+| Variable                             | Description                                                                             |
+| ------------------------------------ | --------------------------------------------------------------------------------------- |
+| `AWS_ACCESS_KEY_ID` *(optional)*     | AWS IAM access key. Required only if not using `~/.aws/credentials`.                    |
+| `AWS_SECRET_ACCESS_KEY` *(optional)* | AWS IAM secret access key. Only used if the above is set.                               |
+| `BUCKET_NAME`                        | Name of the S3 bucket used to upload PDFs and receive Textract output.                  |
+| `REGION`                             | AWS region where your S3 bucket and Textract are hosted (e.g., `us-east-1`).            |
+| `TEXTRACT_MAX_RETRIES`               | Max retries while polling for Textract job completion.                                  |
+| `TEXTRACT_DELAY`                     | Delay (in seconds) between retries while waiting for Textract to finish.                |
+| `MAX_THREADS`                        | Number of threads to use for parallel processing. Improves speed for large batches.     |
+| `BATCH_SIZE`                         | Number of documents to process per batch. Helps control memory and API usage.           |
+| `OPENAI_API_KEY`                     | Your OpenAI API key for accessing GPT models.                                           |
+| `OPENAI_MODEL`                       | GPT model to use (`gpt-4o-mini`, `gpt-4`, `gpt-3.5-turbo`, etc.).                       |
+| `TMP_DIR`                            | Local temporary folder used for processing intermediate files.                          |
+| `INPUT_DIR`                          | Local folder containing input images or PDFs for processing.                            |
+| `OUTPUT_DIR`                         | Folder where the corrected text, entities and other output is stored.                   |
+| `IMAGE_MAGICK_COMMAND`               | CLI command for ImageMagick (`magick` on macOS, `convert` on Linux).                    |
+| `TEST_LEVENSHTEIN_MAX_DIFF_RATIO`    | Max allowed difference ratio (0–1) for Levenshtein test. Flags major ChatGPT edits.     |
+| `TEST_WORD_COUNT_TOLERANCE`          | Allowed word count difference ratio (0–1) between raw and corrected text.               |
+| `TEST_GPT_REPEAT_CORRECTIONS`        | Number of times to re-run GPT correction to test consistency across runs.               |
+| `TEST_TARGET_FILE`                   | Run tests on a specific file. If not set, tests apply to all available files.           |
+
+
+1. Run the pipeline:
 ```
 python main.py
 ```
@@ -172,6 +207,14 @@ Run a specific test:
 pytest tests/test_wordcount.py
 ```
 
+### Test Suite Overview
+
+| Test File                      | Description                                                       |
+| ------------------------------ | ----------------------------------------------------------------- |
+| `test_wordcount.py`            | Compares the word count between raw OCR text and GPT-corrected output. Fails if the difference exceeds the threshold set in `TEST_WORD_COUNT_TOLERANCE`. Helps detect overcorrection or content loss.           |
+| `test_levenshtein_distance.py` | Calculates the Levenshtein distance ratio between raw and corrected text. Fails if the ratio exceeds `TEST_LEVENSHTEIN_MAX_DIFF_RATIO`. Useful for catching excessive edits.                              |
+| `test_chatgpt_consistency.py`  | Runs GPT correction multiple times on the same input (`TEST_GPT_REPEAT_CORRECTIONS`) and compares results. Flags inconsistencies in word count or Levenshtein distance across runs. Validates output stability.       |
+
 ---
 
 ## Logs & Outputs
@@ -185,3 +228,4 @@ Outputs:
 - .corrected.txt (GPT-corrected text)
 - .coords.json (bounding box info)
 - .entities.json (structured entities)
+- .combined_output.json (page numbers and split letters)
