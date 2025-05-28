@@ -9,6 +9,7 @@ import boto3  # AWS SDK for Python
 from openai import OpenAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from botocore.config import Config
 
 # --- Load environment variables ---
 load_dotenv()
@@ -36,8 +37,11 @@ os.makedirs(tmp_dir, exist_ok=True)
 os.makedirs(output_dir, exist_ok=True)
 
 # --- AWS Client ---
-s3 = boto3.client('s3', region_name=region)
-textract = boto3.client('textract', region_name=region) # Create Textract client for OCR processing
+boto_config = Config(
+    max_pool_connections=max_threads * 2  # Adjust this number based on MAX_THREADS
+)
+s3 = boto3.client('s3', region_name=region, config=boto_config)
+textract = boto3.client('textract', region_name=region, config=boto_config) # Create Textract client for OCR processing
 
 # --- ChatGPT Client ---
 chat_gpt_client = OpenAI(api_key=api_key)
@@ -109,6 +113,20 @@ def process_textract_result(base_name, job_info):
             with open(corrected_path, "r", encoding="utf-8") as cf:
                 corrected_text = cf.read()
             extract_entities_with_chatgpt(corrected_text, base_name, doc_output_dir, chat_gpt_client, model_name)
+            
+            # --- Extract page + split letters ---
+            logging.info(f"Detecting multiple letters for: {base_name}")
+            combined_output = extract_page_and_split_letters(
+                corrected_path,
+                chat_gpt_client,
+                model_name
+            )
+
+            combined_path = os.path.join(doc_output_dir, base_name + ".combined_output.json")
+            with open(combined_path, "w", encoding="utf-8") as out_file:
+                json.dump(combined_output, out_file, indent=2, ensure_ascii=False)
+            logging.info(f"Combined output saved: {combined_path}")
+            
         else:
             logging.warning(f"Corrected text not found for {base_name}, using raw text.")
             extract_entities_with_chatgpt(raw_text, base_name, doc_output_dir, chat_gpt_client, model_name)
@@ -116,12 +134,12 @@ def process_textract_result(base_name, job_info):
 # --- Split files into batches ---
 files = [
     f for f in os.listdir(input_dir)
-    if f.lower().endswith((".jpg", ".jpeg", ".pdf", ".png", ".tiff"))
+    if not f.startswith("._") and f.lower().endswith((".jpg", ".jpeg", ".pdf", ".png", ".tiff"))
 ]
 batches = list(split_into_batches(files, batch_size))
 
 logging.info(f"Batch size: {batch_size} | Max Threads: {max_threads}")
-logging.info("Note: AWS Textract may limit concurrent jobs (typically 3-5).")
+# logging.info("Note: AWS Textract may limit concurrent jobs (typically 3-5).")
 
 # --- Process in batches ---
 for batch_index, current_batch in enumerate(batches):

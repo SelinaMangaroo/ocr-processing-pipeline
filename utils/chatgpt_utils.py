@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import re
 
 def correct_text_with_chatgpt(text, base_name, doc_output_dir, client, model_name, save=True):
     """
@@ -121,3 +122,72 @@ def extract_entities_with_chatgpt(text, base_name, doc_output_dir, client, model
     except Exception as e:
         logging.error(f"Entity extraction failed for {base_name}: {e}")
         return None
+
+
+def extract_page_and_split_letters(corrected_text_path, client, model_name):
+    """
+    Extracts the page number from the first line of corrected text,
+    and uses ChatGPT to determine and split multiple letters if they exist.
+
+    Args:
+        corrected_text_path (str): Path to the corrected text file.
+        client: OpenAI client.
+        model_name (str): ChatGPT model .
+
+    Returns:
+        dict: {
+            "page_number": int or None,
+            "letters": [str, ...]  # list of one or more letters
+        }
+    """
+    try:
+        with open(corrected_text_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        if not lines:
+            return {"page_number": None, "letters": []}
+
+        first_line = lines[0].strip()
+        full_text = ''.join(lines)
+
+        # Extract page number from the first line
+        try:
+            page_number = int(first_line.strip())
+        except ValueError:
+            page_number = None
+
+        # Prompt to detect/split multiple letters
+        prompt = (
+            "The following is OCR-corrected text from scanned historical documents. "
+            "Please detect if there are **multiple letters** present. Each letter typically starts with a recipient block (e.g. a name and address) followed by a greeting."
+            "(e.g., 'Dear', 'Friend', 'Dear Sir:' or 'Gentlemen:' and etc.), or a name and date line, and ends with a sign-off like 'Sincerely yours' or 'Yours truly' or 'Yours sincerely,' etc."
+            "Split the text into a **JSON array of full letters** — one string per letter. Return the full content of each letter, "
+            "including greetings and sign-offs. If it’s just one letter, return a list with one string."
+            "IMPORTANT: Only return a JSON list — do NOT include any explanation or notes. Do not add any additional content, do not alter the text."
+            f"Text:\n{full_text}"
+        )
+
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        # Try to parse the list from GPT response
+        try:
+            letters = json.loads(result)
+            if not isinstance(letters, list):
+                letters = [full_text]
+        except json.JSONDecodeError:
+            letters = [full_text]
+
+        return {
+            "page_number": page_number,
+            "letters": letters
+        }
+
+    except Exception as e:
+        logging.error(f"Failed to extract page and split letters for {corrected_text_path}: {e}")
+        return {"page_number": None, "letters": []}
